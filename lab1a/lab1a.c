@@ -137,7 +137,7 @@ void processedWrite(int source)
         switch(buf[i])
         {
             case 3:
-                if(shell_flag == 1 && source == KEYBOARD)
+                if(shell_flag == 1)
                 {
                     if(kill(child_pid, SIGINT) < 0)
                     {

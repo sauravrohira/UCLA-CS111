@@ -71,12 +71,12 @@ void setupTerminal()
 
 void restoreTerminal()
 {
+    free(buf);
     tcsetattr(0, TCSANOW, &default_mode);
 }
 
 void callRead(int fd, char* buf, size_t num_bytes)
 {
-    printf("READ!\n");
     buf_len = read(fd, buf, num_bytes);
     if (buf_len == -1)
     {
@@ -96,7 +96,6 @@ void callWrite(int fd, char* buf, size_t num_bytes)
 
 void processedWrite(int source) 
 {
-    printf("HERE!\n");
     for(int i = 0; i < buf_len; i++)
     {
         switch(buf[i])
@@ -189,6 +188,8 @@ int main(int argc, char ** argv)
         if(c != 0)
             exit(1);
     }
+
+    buf = (char*) malloc(BUF_SIZE);
 
     if(shell_flag == 1)
     {

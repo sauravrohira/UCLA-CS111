@@ -76,6 +76,7 @@ void restoreTerminal()
 
 void callRead(int fd, char* buf, size_t num_bytes)
 {
+    printf("READ!\n");
     buf_len = read(fd, buf, num_bytes);
     if (buf_len == -1)
     {

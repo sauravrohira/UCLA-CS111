@@ -26,6 +26,12 @@ struct pollfd readPoll[2];
 pid_t child_pid = 0;
 short poll_events = (POLL_IN | POLL_ERR | POLL_HUP);
 
+void handleSignal(int signal_val)
+{
+    if(signal_val == SIGPIPE)
+        exit(0);
+}
+
 void redirectFD(int old_fd, int new_fd)
 {
     close(old_fd);
@@ -34,13 +40,21 @@ void redirectFD(int old_fd, int new_fd)
 
 void setupShell()
 {
+
+    if(signal(SIGPIPE, handleSignal) == SIG_ERR);
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+    
     pipe(shell_in);
     pipe(shell_out);
     child_pid = fork();
 
     if (child_pid == -1)
     {
-        //ERROR!
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
     }
 
     if(child_pid == 0)
@@ -54,8 +68,18 @@ void setupShell()
 
         if(execvp(shell_path, args) == -1)
         {
-            //ERROR!
+            fprintf(stderr, "Error: %s", strerror(errno));
+            exit(1);
         }
+
+        close(shell_in[1]);
+        close(shell_out[0]);
+    }
+
+    if(child_pid > 0)
+    {
+        close(shell_in[0]);
+        close(shell_out[1]);
     }
 }
 
@@ -73,6 +97,17 @@ void restoreTerminal()
 {
     free(buf);
     tcsetattr(0, TCSANOW, &default_mode);
+    if(shell_flag == 1)
+    {
+        int exit_status;
+        if(waitpid(child_pid,&exit_status, 0) < 0)
+        {
+            fprintf(stderr, "Error: %s", strerror(errno));
+            exit(1);
+        }
+        if(WIFEXITED(exit_status))
+            fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
+    }
 }
 
 void callRead(int fd, char* buf, size_t num_bytes)
@@ -101,9 +136,19 @@ void processedWrite(int source)
         switch(buf[i])
         {
             case 3:
+                if(shell_flag && source == KEYBOARD)
+                {
+                    if(kill(child_pid, SIGINT) < 0)
+                    {
+                        fprintf(stderr, "Error: %s", strerror(errno));
+                        exit(1);
+                    }
+                }
                 break;
             case 4:
                 if(source == KEYBOARD)
+                    if(shell_flag == 1)
+                        close(shell_in[1]);
                     exit(0);
                 break;
             case '\r':
@@ -133,7 +178,7 @@ void readMode()
 void pollMode()
 {
     readPoll[0].fd = STDIN_FILENO;
-    readPoll[1].fd = child_pid;
+    readPoll[1].fd = shell_out[0];
     readPoll[0].events = readPoll[1].events = poll_events;
 
     while(1)
@@ -141,7 +186,8 @@ void pollMode()
         int poll_return = poll(readPoll, 2, 0);
         if(poll_return < 0)
         {
-            //ERROR!
+            fprintf(stderr, "Error: %s", strerror(errno));
+            exit(1);
         }
 
         if(poll_return == 0)
@@ -155,12 +201,8 @@ void pollMode()
 
         if(readPoll[1].revents & POLL_IN)
         {
-            do
-            {
-                callRead(shell_out[0], buf, BUF_SIZE);
-                processedWrite(SHELL);
-            }
-            while(buf_len > 0);
+            callRead(shell_out[0], buf, BUF_SIZE);
+            processedWrite(SHELL);
         }
     }
 }

@@ -166,6 +166,7 @@ void pollMode()
 int main(int argc, char ** argv)
 {
     setupTerminal();
+    atexit(restoreTerminal);
 
     //variable used to store getopt_long return values
     int c;

@@ -95,6 +95,7 @@ void callWrite(int fd, char* buf, size_t num_bytes)
 
 void processedWrite(int source) 
 {
+    printf("HERE!\n");
     for(int i = 0; i < buf_len; i++)
     {
         switch(buf[i])

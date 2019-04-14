@@ -76,7 +76,8 @@ void restoreTerminal()
 
 void callRead(int fd, char* buf, size_t num_bytes)
 {
-    if(read(fd, buf, num_bytes) == -1)
+    buf_len = read(fd, buf, num_bytes);
+    if (buf_len == -1)
     {
         fprintf(stderr, "Error: %s", strerror(errno));
         exit(1);

@@ -148,9 +148,11 @@ void processedWrite(int source)
                 break;
             case 4:
                 if(source == KEYBOARD)
+                {
                     if(shell_flag == 1)
                         close(shell_in[1]);
                     exit(0);
+                }
                 break;
             case '\r':
             case '\n':

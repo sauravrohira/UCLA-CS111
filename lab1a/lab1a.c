@@ -188,7 +188,11 @@ int main(int argc, char ** argv)
     }
 
     if(shell_flag == 1)
+    {
         setupShell();
-    
+        pollMode();
+    }
+    else
+        readMode();
 }
 

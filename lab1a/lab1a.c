@@ -99,11 +99,11 @@ void processedWrite(int source)
         switch(buf[i])
         {
             case 3:
-
                 break;
             case 4:
                 if(source == KEYBOARD)
                     exit(0);
+                break;
             case '\r':
             case '\n':
                 callWrite(STDOUT_FILENO, "\r\n", 2);

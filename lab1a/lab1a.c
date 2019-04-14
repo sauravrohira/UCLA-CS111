@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <errno.h>
@@ -41,7 +42,7 @@ void redirectFD(int old_fd, int new_fd)
 void setupShell()
 {
 
-    if(signal(SIGPIPE, handleSignal) == SIG_ERR);
+    if(signal(SIGPIPE, handleSignal) == SIG_ERR)
     {
         fprintf(stderr, "Error: %s", strerror(errno));
         exit(1);

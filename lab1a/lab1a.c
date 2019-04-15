@@ -60,6 +60,9 @@ void setupShell()
 
     if(child_pid == 0)
     {
+
+        close(shell_in[1]);
+        close(shell_out[0]);
         redirectFD(STDIN_FILENO, shell_in[0]);
         redirectFD(STDOUT_FILENO, shell_out[1]);
         redirectFD(STDERR_FILENO, shell_out[1]);
@@ -72,9 +75,6 @@ void setupShell()
             fprintf(stderr, "Error: %s", strerror(errno));
             exit(1);
         }
-
-        close(shell_in[1]);
-        close(shell_out[0]);
     }
 
     if(child_pid > 0)
@@ -101,10 +101,9 @@ void restoreTerminal()
     if(shell_flag == 1)
     {
         int exit_status;
-        if(waitpid(child_pid,&exit_status, 0) < 0)
+        if(waitpid(child_pid, &exit_status, 0) < 0)
         {
             fprintf(stderr, "Error: %s", strerror(errno));
-            exit(1);
         }
         if(WIFEXITED(exit_status))
             fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
@@ -137,7 +136,7 @@ void processedWrite(int source)
         switch(buf[i])
         {
             case 3:
-                if(shell_flag == 1)
+                if(shell_flag)
                 {
                     if(kill(child_pid, SIGINT) < 0)
                     {
@@ -147,9 +146,11 @@ void processedWrite(int source)
                 }
                 break;
             case 4:
+            {
                 if(shell_flag == 1)
                     close(shell_in[1]);
                 exit(0);
+            }
                 break;
             case '\r':
             case '\n':
@@ -157,7 +158,7 @@ void processedWrite(int source)
                 if(shell_flag == 1 && source == KEYBOARD)
                     callWrite(shell_in[1], "\n", 1);
                 break;
-            default:
+            default:        
                 callWrite(STDOUT_FILENO, buf + i, 1);
                 if(shell_flag == 1 && source == KEYBOARD)
                     callWrite(shell_in[1], buf + i, 1);
@@ -204,9 +205,6 @@ void pollMode()
             callRead(shell_out[0], buf, BUF_SIZE);
             processedWrite(SHELL);
         }
-
-        if(readPoll[1].revents & (POLL_ERR | POLL_HUP))
-            exit(0);
     }
 }
 

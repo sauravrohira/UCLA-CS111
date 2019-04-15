@@ -270,9 +270,9 @@ int main(int argc, char ** argv)
     while (1)
     {
         c = getopt_long(argc, argv, "", longopts, &option_index);
-        if(c == -1) //breaks out of loop once all options have been parsed.
+        if(c == -1)
             break;
-        if(c != 0) //exits with code 1, when a incorrect option is provided.
+        if(c != 0)
             exit(1);
     }
 

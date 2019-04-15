@@ -234,9 +234,10 @@ void pollMode()
             processedWrite(SHELL);
         }
 
+        /*
         if(readPoll[1].revents & (POLL_ERR | POLL_HUP))
             exit(0);
-        
+        */
     }
 }
 

@@ -105,31 +105,19 @@ void setupShell()
 //Set terminal to character-at-a-time, no-echo mode:
 void setupTerminal()
 {
-    if(tcgetattr(0, &default_mode) < 0) //Regular mode stored in default_mode.
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
+    tcgetattr(0, &default_mode); //Regular mode stored in default_mode.
     project_mode = default_mode; 
     project_mode.c_cflag = ISTRIP;
     project_mode.c_oflag = 0;
     project_mode.c_lflag = 0;
-    if(tcsetattr(0, TCSANOW, &project_mode) < 0) //New modified mode is made active.
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
+    tcsetattr(0, TCSANOW, &project_mode); //New modified mode is made active.
 }
 
 //Function called upon exit, sets terminal back to its default mode:
 void restoreTerminal()
 {
     free(buf);
-    if(tcsetattr(0, TCSANOW, &default_mode) < 0)
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
+    tcsetattr(0, TCSANOW, &default_mode);
 
     //prints shell exit status:
     if(shell_flag == 1)

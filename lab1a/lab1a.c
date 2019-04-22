@@ -172,11 +172,9 @@ void processedWrite(int source)
                 }
                 break;
             case 4:
-            {
                 if(shell_flag == 1)
                     callClose(shell_in[1]);
                 exit(0);
-            }
                 break;
             case '\r':
             case '\n':

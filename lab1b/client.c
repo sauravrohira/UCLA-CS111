@@ -114,7 +114,7 @@ void runClient()
             buf_len = read(sockfd, buf, BUF_SIZE);
             if (buf_len == 0)
             {
-                safeClose(sockfd);
+                close(sockfd);
                 exit(0);
             }
 

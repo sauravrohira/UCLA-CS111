@@ -98,13 +98,9 @@ void processInput(int source)
                 callWrite(STDOUT_FILENO,"\r\n", 2);
                 if (source == KEYBOARD)
                     callWrite(sockfd, buf + i, 1);
-                if(log_name != NULL)
-                    callWrite(log_fd, buf + i, 1);
                 break;
             default:
                 callWrite(STDOUT_FILENO, buf + i, 1);
-                if (log_name != NULL)
-                    callWrite(log_fd, buf + i, 1);
                 if(source == KEYBOARD)
                     callWrite(sockfd, buf + i, 1);
                 break;
@@ -114,10 +110,13 @@ void processInput(int source)
     if (log_name != NULL)
     {
         if (source == KEYBOARD)
-            dprintf(log_fd, "SENT %d bytes: %s\n", buf_len, buf);
+            dprintf(log_fd, "SENT %d bytes: ", buf_len);
         else
-            dprintf(log_fd, "RECIEVED %d bytes: %s\n", buf_len, buf);
+            dprintf(log_fd, "RECIEVED %d bytes: ", buf_len);
+        callWrite(log_fd, buf, buf_len);
+        callWrite(log_fd, "\n", 1);
     }
+
 }
 
 void runClient()

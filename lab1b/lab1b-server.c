@@ -36,10 +36,10 @@ int socket_fd;
 char *hostname = "localhost";
 struct hostent *host;
 struct sockaddr_in serv_addr, cli_addr;
-int clilen;
+unsigned int clilen;
 
 
-    //Function called when the shell creates a SIGPIPE:
+//Function called when the shell creates a SIGPIPE:
 void handleSignal(int signal_val)
 {
     if (signal_val == SIGPIPE)

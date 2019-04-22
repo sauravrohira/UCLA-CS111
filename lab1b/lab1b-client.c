@@ -26,13 +26,9 @@
 //Global Variables:
 struct termios default_mode; //stores the current terminal mode
 struct termios project_mode; //stores modified mode for project
-int shell_flag = 0; //flag used to identify if shell option was provided
-int shell_in[2]; //stores file descriptors for pipe to shell
-int shell_out[2]; //stores file descriptors for pipe from shell
 char* buf; //buffer used for reading from shell and keyboard and writing to shell and screen
 int buf_len = 0; //stores number of bytes read by most recent read call
 struct pollfd readPoll[2]; //array of pollfd structs used to set up polling
-pid_t shell_pid = 0; //stores pid of child process that runs the shell
 short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
 int port_flag = 0;
 int port_num = -1;

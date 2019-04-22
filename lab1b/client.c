@@ -112,6 +112,12 @@ void runClient()
         if(readPoll[1].revents & POLLIN)
         {
             buf_len = read(sockfd, buf, BUF_SIZE);
+            if (buf_len == 0)
+            {
+                safeClose(sockfd);
+                exit(0);
+            }
+
             processInput(SOCKET);
         }
 

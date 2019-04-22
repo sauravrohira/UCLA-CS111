@@ -64,6 +64,21 @@ void redirectFD(int old_fd, int new_fd)
     }
 }
 
+void restore()
+{
+    free(buf);
+    //prints shell exit status:
+    int exit_status;
+    if (waitpid(shell_pid, &exit_status, 0) < 0)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+    if (WIFEXITED(exit_status))
+        fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
+    callClose(newsockfd);
+}
+
 //Sets up the shell and pipes for communication with the shell:
 void setupShell()
 {
@@ -116,8 +131,15 @@ void processInput(int source)
         switch(buf[i])
         {
             case 3:
+                if (kill(shell_pid, SIGINT) < 0)
+                {
+                    fprintf(stderr, "Error: %s", strerror(errno));
+                    exit(1);
+                }
                 break;
             case 4:
+                callClose(shell_in[1]);
+                exit(0);
                 break;
             case '\r':
             case '\n':
@@ -241,5 +263,6 @@ int main(int argc, char** argv)
     }
 
     setupShell();
+    atexit(restore);
     runServer();
 }

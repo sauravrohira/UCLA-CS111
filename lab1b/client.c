@@ -61,11 +61,6 @@ void processInput(int source)
     {
         switch(buf[i])
         {
-            case 3:
-                exit(0);
-                break;
-            case 4:
-                break;
             case '\r':
             case '\n':
                 write(STDOUT_FILENO,"\r\n", 2);

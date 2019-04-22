@@ -38,6 +38,36 @@ short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by po
 char* buf;
 int buf_len;
 
+//Calls close and prints error message on failure:
+void callClose(int fd)
+{
+    if (close(fd) < 0)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
+//Calls read and prints error message on failure:
+void callRead(int fd, char *buf, size_t num_bytes)
+{
+    buf_len = read(fd, buf, num_bytes);
+    if (buf_len == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
+//Calls write and prints error message on failure:
+void callWrite(int fd, char *buf, size_t num_bytes)
+{
+    if (write(fd, buf, num_bytes) == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
 
 void setupTerminal()
 {
@@ -63,14 +93,14 @@ void processInput(int source)
         {
             case '\r':
             case '\n':
-                write(STDOUT_FILENO,"\r\n", 2);
+                callWrite(STDOUT_FILENO,"\r\n", 2);
                 if (source == KEYBOARD)
-                    write(sockfd, buf + i, 1);
+                    callWrite(sockfd, buf + i, 1);
                 break;
             default:
-                write(STDOUT_FILENO, buf + i, 1);
+                callWrite(STDOUT_FILENO, buf + i, 1);
                 if(source == KEYBOARD)
-                    write(sockfd, buf + i, 1);
+                    callWrite(sockfd, buf + i, 1);
                 break;
         }
     }
@@ -78,9 +108,9 @@ void processInput(int source)
     if (log_name != NULL)
     {
         if (source == KEYBOARD)
-            fprintf(log_file, "SENT %d bytes: %s\n", buf_len, buf);
+            dprintf(log_file, "SENT %d bytes: %s", buf_len, buf);
         else
-            fprintf(log_file, "RECIEVED %d bytes: %s\n", buf_len, buf);
+            dprintf(log_file, "RECIEVED %d bytes: %s", buf_len, buf);
     }
 }
 
@@ -105,16 +135,16 @@ void runClient()
 
         if(readPoll[0].revents & POLLIN)
         {
-            buf_len = read(STDIN_FILENO, buf, BUF_SIZE);
+            callRead(STDIN_FILENO, buf, BUF_SIZE);
             processInput(KEYBOARD);
         }
 
         if(readPoll[1].revents & POLLIN)
         {
-            buf_len = read(sockfd, buf, BUF_SIZE);
+            callRead(sockfd, buf, BUF_SIZE);
             if (buf_len == 0)
             {
-                close(sockfd);
+                callClose(sockfd);
                 exit(0);
             }
 

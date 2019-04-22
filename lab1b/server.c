@@ -53,6 +53,27 @@ void callClose(int fd)
     }
 }
 
+//Calls read and prints error message on failure:
+void callRead(int fd, char *buf, size_t num_bytes)
+{
+    buf_len = read(fd, buf, num_bytes);
+    if (buf_len == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
+//Calls write and prints error message on failure:
+void callWrite(int fd, char *buf, size_t num_bytes)
+{
+    if (write(fd, buf, num_bytes) == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
 //Used to redirect input and output:
 void redirectFD(int old_fd, int new_fd)
 {
@@ -144,15 +165,15 @@ void processInput(int source)
             case '\r':
             case '\n':
                 if(source == SOCKET)
-                    write(shell_in[1], "\n", 1);
+                    callWrite(shell_in[1], "\n", 1);
                 else 
-                    write(newsockfd, buf + i, 1);
+                    callWrite(newsockfd, buf + i, 1);
                 break;
             default:
                 if(source == SOCKET)
-                    write(shell_in[1], buf + i, 1);
+                    callWrite(shell_in[1], buf + i, 1);
                 else 
-                    write(newsockfd, buf + i, 1);
+                    callWrite(newsockfd, buf + i, 1);
                 break;
         }
     }
@@ -179,13 +200,13 @@ void runServer()
 
         if (readPoll[0].revents & POLLIN)
         {
-            buf_len = read(newsockfd, buf, BUF_SIZE);
+            callRead(newsockfd, buf, BUF_SIZE);
             processInput(SOCKET);
         }
 
         if (readPoll[1].revents & POLLIN)
         {
-            buf_len = read(shell_out[0], buf, BUF_SIZE);
+            callRead(shell_out[0], buf, BUF_SIZE);
             processInput(SHELL);
         }
 

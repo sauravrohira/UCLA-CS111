@@ -13,6 +13,7 @@
 #include <termios.h>
 #include <poll.h>
 #include <netdb.h>
+#include <ulimit.h>
 
 #define BUF_SIZE 256
 #define PORT 'a'
@@ -30,7 +31,7 @@ struct hostent *server;
 int port_num;
 int port_flag = 0;
 char* log_name = NULL;
-FILE* log_file;
+int log_fd;
 
 struct pollfd readPoll[2]; //array of pollfd structs used to set up polling
 short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
@@ -87,6 +88,7 @@ void restoreTerminal()
 
 void processInput(int source)
 {
+
     for(int i = 0; i < buf_len; i++)
     {
         switch(buf[i])
@@ -96,9 +98,13 @@ void processInput(int source)
                 callWrite(STDOUT_FILENO,"\r\n", 2);
                 if (source == KEYBOARD)
                     callWrite(sockfd, buf + i, 1);
+                if(log_name != NULL)
+                    callWrite(log_fd, buf + i, 1);
                 break;
             default:
                 callWrite(STDOUT_FILENO, buf + i, 1);
+                if (log_name != NULL)
+                    callWrite(log_fd, buf + i, 1);
                 if(source == KEYBOARD)
                     callWrite(sockfd, buf + i, 1);
                 break;
@@ -108,9 +114,9 @@ void processInput(int source)
     if (log_name != NULL)
     {
         if (source == KEYBOARD)
-            dprintf(log_file, "SENT %d bytes: %s", buf_len, buf);
+            dprintf(log_fd, "SENT %d bytes: %s", buf_len, buf);
         else
-            dprintf(log_file, "RECIEVED %d bytes: %s", buf_len, buf);
+            dprintf(log_fd, "RECIEVED %d bytes: %s", buf_len, buf);
     }
 }
 
@@ -187,10 +193,11 @@ int main(int argc, char **argv)
             
             case LOG:
                 log_name = optarg;
-                log_file = fopen(log_name, "w+");
-                if (log_file == NULL)
+                log_fd = creat(log_name, 0666);
+                if (log_fd < 0)
                 {
                     fprintf(stderr, "Error: %s\n", strerror(errno));
+                    exit(1);
                 }
                 break;
 

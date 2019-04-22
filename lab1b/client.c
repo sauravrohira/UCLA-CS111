@@ -114,9 +114,9 @@ void processInput(int source)
     if (log_name != NULL)
     {
         if (source == KEYBOARD)
-            dprintf(log_fd, "SENT %d bytes: %s", buf_len, buf);
+            dprintf(log_fd, "SENT %d bytes: %s\n", buf_len, buf);
         else
-            dprintf(log_fd, "RECIEVED %d bytes: %s", buf_len, buf);
+            dprintf(log_fd, "RECIEVED %d bytes: %s\n", buf_len, buf);
     }
 }
 

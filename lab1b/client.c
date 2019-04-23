@@ -13,17 +13,21 @@
 #include <termios.h>
 #include <poll.h>
 #include <netdb.h>
-#include <ulimit.h>
+#include <zlib.h>
 
+//Global Constants:
 #define BUF_SIZE 256
 #define PORT 'a'
 #define LOG 'b'
+#define COMPRESS 'c'
 #define KEYBOARD 0
 #define SOCKET 1
 
+//Global Variables:
 struct termios default_mode; //stores the current terminal mode
 struct termios project_mode; //stores modified mode for project
 
+//variables used to 
 int sockfd;
 struct sockaddr_in serv_addr;
 struct hostent *server;
@@ -32,12 +36,16 @@ int port_num;
 int port_flag = 0;
 char* log_name = NULL;
 int log_fd;
+int compress_flag = 0;
 
 struct pollfd readPoll[2]; //array of pollfd structs used to set up polling
 short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
 
 char* buf;
 int buf_len;
+
+z_stream client2server;
+z_stream server2client;
 
 //Calls close and prints error message on failure:
 void callClose(int fd)
@@ -86,37 +94,87 @@ void restoreTerminal()
     tcsetattr(0, TCSANOW, &default_mode);
 }
 
-void processInput(int source)
+void setupCompression()
 {
+    client2server.zalloc = Z_NULL;
+    client2server.zfree = Z_NULL;
+    client2server.opaque = Z_NULL;
 
-    for(int i = 0; i < buf_len; i++)
+    if (deflateInit(&client2server, Z_DEFAULT_COMPRESSION) != Z_OK)
     {
-        switch(buf[i])
-        {
-            case '\r':
-            case '\n':
-                callWrite(STDOUT_FILENO,"\r\n", 2);
-                if (source == KEYBOARD)
-                    callWrite(sockfd, buf + i, 1);
-                break;
-            default:
-                callWrite(STDOUT_FILENO, buf + i, 1);
-                if(source == KEYBOARD)
-                    callWrite(sockfd, buf + i, 1);
-                break;
-        }
+        fprintf(stderr, "Error: could not initialize compression\n");
+        exit(1);
     }
+
+    server2client.zalloc = Z_NULL;
+    server2client.zfree = Z_NULL;
+    server2client.opaque = Z_NULL;
+
+    if (inflateInit(&server2client) != Z_OK)
+    {
+        fprintf(stderr, "Error: could not initialize decompression\n");
+        exit(1);
+    }
+}
+
+void compressOutput(char* compress_buf, int* compress_bytes)
+{
+    client2server.avail_in = buf_len;
+    client2server.next_in = (unsigned char *)buf;
+    client2server.avail_out = 256;
+    client2server.next_out = (unsigned char *)compress_buf;
+
+    do
+    {
+        deflate(&client2server, Z_SYNC_FLUSH);
+    } while (client2server.avail_in > 0);
+
+    *compress_bytes = (256 - client2server.avail_in);
+}
+
+void decompressInput(char *decompress_buf, int *decompress_bytes)
+{
+    server2client.avail_in = buf_len;
+    server2client.next_in = (unsigned char *)buf;
+    server2client.avail_out = 1024;
+    server2client.next_out = (unsigned char *)decompress_buf;
+    do
+    {
+        inflate(&server2client, Z_SYNC_FLUSH);
+    } while (server2client.avail_in > 0);
+
+    *decompress_bytes = (1024 - client2server.avail_in);
+}
+
+void processInput(int source, char* buffer, int num_bytes, int log_bytes)
+{
+        for(int i = 0; i < num_bytes; i++)
+        {
+            switch(buf[i])
+            {
+                case '\r':
+                case '\n':
+                    callWrite(STDOUT_FILENO,"\r\n", 2);
+                    if ((source == KEYBOARD) && (compress_flag == 0))
+                        callWrite(sockfd, buffer + i, 1);
+                    break;
+                default:
+                    callWrite(STDOUT_FILENO, buffer + i, 1);
+                    if((source == KEYBOARD) && (compress_flag == 0))
+                        callWrite(sockfd, buffer + i, 1);
+                    break;
+            }
+        }
 
     if (log_name != NULL)
     {
         if (source == KEYBOARD)
-            dprintf(log_fd, "SENT %d bytes: ", buf_len);
+            dprintf(log_fd, "SENT %d bytes: ", log_bytes);
         else
-            dprintf(log_fd, "RECEIVED %d bytes: ", buf_len);
-        callWrite(log_fd, buf, buf_len);
+            dprintf(log_fd, "RECEIVED %d bytes: ", log_bytes);
+        callWrite(log_fd, buffer, num_bytes);
         callWrite(log_fd, "\n", 1);
     }
-
 }
 
 void runClient()
@@ -141,7 +199,16 @@ void runClient()
         if(readPoll[0].revents & POLLIN)
         {
             callRead(STDIN_FILENO, buf, BUF_SIZE);
-            processInput(KEYBOARD);
+
+            if(compress_flag == 1)
+            {
+                char compress_buf[BUF_SIZE];
+                int compress_bytes;
+                compressOutput(compress_buf, &compress_bytes);
+                processInput(KEYBOARD, buf, buf_len, compress_bytes);
+            }
+            else
+                processInput(KEYBOARD, buf, buf_len, buf_len);
         }
 
         if(readPoll[1].revents & POLLIN)
@@ -153,7 +220,15 @@ void runClient()
                 exit(0);
             }
 
-            processInput(SOCKET);
+            if(compress_flag == 1)
+            {
+                char decompress_buf[BUF_SIZE*4];
+                int decompress_bytes;
+                compressOutput(decompress_buf, &decompress_bytes);
+                processInput(SOCKET, decompress_buf, decompress_bytes, buf_len);
+            }
+            else
+                processInput(SOCKET, buf, buf_len, buf_len);
         }
 
         if (readPoll[1].revents & (POLLHUP | POLLERR))
@@ -171,6 +246,7 @@ int main(int argc, char **argv)
     static struct option longopts[] = {
         {"port", required_argument, NULL, PORT},
         {"log", required_argument, NULL, LOG},
+        {"compress", no_argument, NULL, COMPRESS},
         {0, 0, 0, 0}
     };
 
@@ -198,6 +274,11 @@ int main(int argc, char **argv)
                     fprintf(stderr, "Error: %s\n", strerror(errno));
                     exit(1);
                 }
+                break;
+            
+            case COMPRESS:
+                compress_flag = 1;
+                setupCompression;
                 break;
 
             default:

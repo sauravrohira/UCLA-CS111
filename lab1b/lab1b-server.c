@@ -17,6 +17,7 @@
 
 #define BUF_SIZE 256
 #define PORT 'a'
+#define COMPRESS 'b'
 #define SOCKET 0
 #define SHELL 1
 
@@ -297,6 +298,7 @@ int main(int argc, char** argv)
     // struct used to identify --shell option and report incorrect options
     static struct option longopts[] = {
         {"port", required_argument, NULL, PORT},
+        {"compress", no_argument, NULL, COMPRESS},
         {0, 0, 0, 0}};
 
     int option_index = 0;
@@ -315,6 +317,11 @@ int main(int argc, char** argv)
                 port_num = atoi(optarg);
                 break;
 
+            case COMPRESS:
+                compress_flag = 1;
+                setupCompression();
+                break;
+                
             default:
                 exit(1);
                 break;

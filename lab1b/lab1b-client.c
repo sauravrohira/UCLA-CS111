@@ -199,7 +199,6 @@ void runClient()
         if(readPoll[0].revents & POLLIN)
         {
             callRead(STDIN_FILENO, buf, BUF_SIZE);
-
             if(compress_flag == 1)
             {
                 char compress_buf[BUF_SIZE];

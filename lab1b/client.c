@@ -229,7 +229,7 @@ void runClient()
             }
             else
                 processInput(SOCKET, buf, buf_len, buf_len);
-                
+
         }
 
         if (readPoll[1].revents & (POLLHUP | POLLERR))
@@ -279,7 +279,7 @@ int main(int argc, char **argv)
             
             case COMPRESS:
                 compress_flag = 1;
-                setupCompression;
+                setupCompression();
                 break;
 
             default:

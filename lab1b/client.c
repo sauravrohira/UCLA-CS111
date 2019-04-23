@@ -229,6 +229,7 @@ void runClient()
             }
             else
                 processInput(SOCKET, buf, buf_len, buf_len);
+                
         }
 
         if (readPoll[1].revents & (POLLHUP | POLLERR))

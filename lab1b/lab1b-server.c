@@ -13,31 +13,33 @@
 #include <termios.h>
 #include <poll.h>
 #include <netdb.h>
+#include <zlib.h>
 
-//Global Constants:
 #define BUF_SIZE 256
-#define CLIENT 0
-#define SHELL 1
 #define PORT 'a'
+#define SOCKET 0
+#define SHELL 1
 
-//Global Variables:
-int shell_flag = 0;                                  //flag used to identify if shell option was provided
-int shell_in[2];                                     //stores file descriptors for pipe to shell
-int shell_out[2];                                    //stores file descriptors for pipe from shell
-char *buf;                                           //buffer used for reading from shell and keyboard and writing to shell and screen
-int buf_len = 0;                                     //stores number of bytes read by most recent read call
-struct pollfd readPoll[2];                           //array of pollfd structs used to set up polling
-pid_t shell_pid = 0;                                 //stores pid of child process that runs the shell
-short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
-int port_flag = 0;
-int port_num = -1;
-int listen_fd;
-int socket_fd;
-char *hostname = "localhost";
-struct hostent *host;
-struct sockaddr_in serv_addr, cli_addr;
+int sockfd, newsockfd;
 unsigned int clilen;
+struct sockaddr_in serv_addr, cli_addr;
 
+char *buf;
+int buf_len;
+
+int port_num;
+int port_flag = 0;
+int compress_flag = 0;
+
+int shell_in[2];  //stores file descriptors for pipe to shell
+int shell_out[2]; //stores file descriptors for pipe from shell
+pid_t shell_pid = 0; //stores pid of child process that runs the shell
+
+struct pollfd readPoll[2]; //array of pollfd structs used to set up polling
+short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
+
+z_stream server2client;
+z_stream client2server;
 
 //Function called when the shell creates a SIGPIPE:
 void handleSignal(int signal_val)
@@ -56,6 +58,27 @@ void callClose(int fd)
     }
 }
 
+//Calls read and prints error message on failure:
+void callRead(int fd, char *buf, size_t num_bytes)
+{
+    buf_len = read(fd, buf, num_bytes);
+    if (buf_len == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
+//Calls write and prints error message on failure:
+void callWrite(int fd, char *buf, size_t num_bytes)
+{
+    if (write(fd, buf, num_bytes) == -1)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+}
+
 //Used to redirect input and output:
 void redirectFD(int old_fd, int new_fd)
 {
@@ -65,6 +88,21 @@ void redirectFD(int old_fd, int new_fd)
         fprintf(stderr, "Error: %s", strerror(errno));
         exit(1);
     }
+}
+
+void restore()
+{
+    free(buf);
+    //prints shell exit status:
+    int exit_status;
+    if (waitpid(shell_pid, &exit_status, 0) < 0)
+    {
+        fprintf(stderr, "Error: %s", strerror(errno));
+        exit(1);
+    }
+    if (WIFEXITED(exit_status))
+        fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
+    callClose(newsockfd);
 }
 
 //Sets up the shell and pipes for communication with the shell:
@@ -112,57 +150,66 @@ void setupShell()
     }
 }
 
-//Function called upon exit, sets terminal back to its default mode:
-void restoreTerminal()
+void setupCompression()
 {
-    free(buf);
+    client2server.zalloc = Z_NULL;
+    client2server.zfree = Z_NULL;
+    client2server.opaque = Z_NULL;
 
-    //prints shell exit status:
-    if (shell_flag == 1)
+    if (deflateInit(&client2server, Z_DEFAULT_COMPRESSION) != Z_OK)
     {
-        int exit_status;
-        if (waitpid(shell_pid, &exit_status, 0) < 0)
-        {
-            fprintf(stderr, "Error: %s", strerror(errno));
-            exit(1);
-        }
-        if (WIFEXITED(exit_status))
-            fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
+        fprintf(stderr, "Error: could not initialize compression\n");
+        exit(1);
     }
 
-    close(socket_fd);
-}
+    server2client.zalloc = Z_NULL;
+    server2client.zfree = Z_NULL;
+    server2client.opaque = Z_NULL;
 
-//Calls read and prints error message on failure:
-void callRead(int fd, char *buf, size_t num_bytes)
-{
-    buf_len = read(fd, buf, num_bytes);
-    if (buf_len == -1)
+    if (inflateInit(&server2client) != Z_OK)
     {
-        fprintf(stderr, "Error: %s", strerror(errno));
+        fprintf(stderr, "Error: could not initialize decompression\n");
         exit(1);
     }
 }
 
-//Calls write and prints error message on failure:
-void callWrite(int fd, char *buf, size_t num_bytes)
+void decompressInput(char *decompress_buf, int *decompress_bytes)
 {
-    if (write(fd, buf, num_bytes) == -1)
+    client2server.avail_in = buf_len;
+    client2server.next_in = (unsigned char *)buf;
+    client2server.avail_out = 256;
+    client2server.next_out = (unsigned char *)decompress_buf;
+
+    do
     {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
+        deflate(&client2server, Z_SYNC_FLUSH);
+    } while (client2server.avail_in > 0);
+
+    *decompress_bytes = (1024 - client2server.avail_in);
 }
 
-//Processes characters read from keyboard and shell and prints them:
-void processedWrite(int source)
+void compressOutput(char *compress_buf, int *compress_bytes)
 {
-    for(int i = 0; i < buf_len; i++)
+    server2client.avail_in = buf_len;
+    server2client.next_in = (unsigned char *)buf;
+    server2client.avail_out = 1024;
+    server2client.next_out = (unsigned char *)compress_buf;
+    do
     {
-        switch(buf[i])
+        inflate(&server2client, Z_SYNC_FLUSH);
+    } while (server2client.avail_in > 0);
+
+    *compress_bytes = (256 - client2server.avail_in);
+}
+
+void processInput(int source, char* buffer, int num_bytes)
+{
+    for(int i = 0; i < num_bytes; i++)
+    {
+        switch(buffer[i])
         {
             case 3:
-                if(kill(shell_pid, SIGINT) < 0)
+                if (kill(shell_pid, SIGINT) < 0)
                 {
                     fprintf(stderr, "Error: %s", strerror(errno));
                     exit(1);
@@ -172,19 +219,18 @@ void processedWrite(int source)
                 callClose(shell_in[1]);
                 exit(0);
                 break;
-
             case '\r':
             case '\n':
-                if(source == SHELL)
-                    callWrite(socket_fd, "\r\n", 2);
-                if(source == CLIENT)
+                if(source == SOCKET)
                     callWrite(shell_in[1], "\n", 1);
+                else 
+                    callWrite(newsockfd, buffer + i, 1);
                 break;
-            default:   
-                if(source == SHELL)     
-                    callWrite(socket_fd, buf + i, 1);
-                if(source == CLIENT)
-                    callWrite(shell_in[1], buf + i, 1);
+            default:
+                if(source == SOCKET)
+                    callWrite(shell_in[1], buffer + i, 1);
+                else 
+                    callWrite(newsockfd, buffer + i, 1);
                 break;
         }
     }
@@ -192,52 +238,67 @@ void processedWrite(int source)
 
 void runServer()
 {
+    readPoll[0].fd = newsockfd;
+    readPoll[1].fd = shell_out[0]; 
+    readPoll[0].events = readPoll[1].events = poll_events;
+
+    while (1)
     {
-        readPoll[0].fd = socket_fd;
-        readPoll[1].fd = shell_out[0];
-        readPoll[0].events = readPoll[1].events = poll_events;
+        int poll_return = poll(readPoll, 2, 0);
 
-        while (1)
+        if (poll_return < 0)
         {
-            int poll_return = poll(readPoll, 2, 0);
-            if (poll_return < 0)
+            fprintf(stderr, "Error: %s", strerror(errno));
+            exit(1);
+        }
+
+        if (poll_return == 0)
+            continue;
+
+        if (readPoll[0].revents & POLLIN)
+        {
+            callRead(newsockfd, buf, BUF_SIZE);
+            if(compress_flag == 1)
             {
-                fprintf(stderr, "Error: %s", strerror(errno));
-                exit(1);
+                char decompress_buf[BUF_SIZE*4];
+                int decompress_bytes;
+                decompressInput(decompress_buf, &decompress_bytes);
+                processInput(SOCKET, decompress_buf, decompress_bytes);
             }
+            else
+                processInput(SOCKET, buf, buf_len);
+        }
 
-            if (poll_return == 0)
-                continue;
-
-            if (readPoll[0].revents & POLL_IN)
+        if (readPoll[1].revents & POLLIN)
+        {
+            callRead(shell_out[0], buf, BUF_SIZE);
+            if(compress_flag == 1)
             {
-                callRead(socket_fd, buf, BUF_SIZE);
-                processedWrite(CLIENT);
+                char compress_buf[BUF_SIZE];
+                int compress_bytes;
+                compressOutput(compress_buf, &compress_bytes);
+                callWrite(newsockfd, compress_buf, compress_bytes);
             }
+            else
+                processInput(SHELL, buf, buf_len);
+        }
 
-            if (readPoll[1].revents & POLL_IN)
-            {
-                callRead(shell_out[0], buf, BUF_SIZE);
-                processedWrite(SHELL);
-            }
-
-            if (readPoll[1].revents & (POLL_ERR | POLL_HUP))
-                exit(0);
+        if (readPoll[1].revents & (POLLHUP | POLLERR))
+        {
+            exit(0);
         }
     }
 }
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
     //variable used to store getopt_long return values
     int c;
     // struct used to identify --shell option and report incorrect options
     static struct option longopts[] = {
         {"port", required_argument, NULL, PORT},
-        {0, 0, 0, 0}
-    };
+        {0, 0, 0, 0}};
 
-    // loop that parses each option provided:
     int option_index = 0;
     while (1)
     {
@@ -270,30 +331,32 @@ int main(int argc, char **argv)
     //initialize buffer for reads and writes:
     buf = (char *)malloc(BUF_SIZE);
 
-    //create server socket:
-    listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd < 0)
+    //setting up socket for connection to client:
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
     {
-        //ERROR
+        fprintf(stderr, "Error: %s\n", strerror(errno));
+        exit(1);
     }
     bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(port_num);
-    if (bind(listen_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
-        //ERROR
+        fprintf(stderr, "Error: %s\n", strerror(errno));
+        exit(1);
     }
-    listen(listen_fd, 5);
+    listen(sockfd, 5);
     clilen = sizeof(cli_addr);
-    socket_fd = accept(listen_fd, (struct sockaddr *)&cli_addr, &clilen);
-    if (socket_fd < 0)
+    newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
+    if (newsockfd < 0)
     {
-        //ERROR
+        fprintf(stderr, "Error: %s\n", strerror(errno));
+        exit(1);
     }
 
-    atexit(restoreTerminal);
-    setupShell(); //creates child process and pipes to execute shell.
+    setupShell();
+    atexit(restore);
     runServer();
-    exit(0);
 }

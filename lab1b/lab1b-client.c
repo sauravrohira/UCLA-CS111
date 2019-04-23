@@ -13,38 +13,39 @@
 #include <termios.h>
 #include <poll.h>
 #include <netdb.h>
+#include <zlib.h>
 
 //Global Constants:
 #define BUF_SIZE 256
-#define KEYBOARD 0
-#define SERVER 1
 #define PORT 'a'
 #define LOG 'b'
 #define COMPRESS 'c'
-#define HOST 'd'
+#define KEYBOARD 0
+#define SOCKET 1
 
 //Global Variables:
 struct termios default_mode; //stores the current terminal mode
 struct termios project_mode; //stores modified mode for project
-char* buf; //buffer used for reading from shell and keyboard and writing to shell and screen
-int buf_len = 0; //stores number of bytes read by most recent read call
+
+//variables used to 
+int sockfd;
+struct sockaddr_in serv_addr;
+struct hostent *server;
+
+int port_num;
+int port_flag = 0;
+char* log_name = NULL;
+int log_fd;
+int compress_flag = 0;
+
 struct pollfd readPoll[2]; //array of pollfd structs used to set up polling
 short poll_events = (POLL_IN | POLL_ERR | POLL_HUP); //events setting used by poll structures
-int port_flag = 0;
-int port_num = -1;
-int socket_fd;
-char* log_name = NULL;
-FILE* log_file;
-char * hostname = "localhost";
-struct hostent *host;
-struct sockaddr_in server;
 
-//Function called when the shell creates a SIGPIPE:
-void handleSignal(int signal_val)
-{
-    if(signal_val == SIGPIPE)
-        exit(0);
-}
+char* buf;
+int buf_len;
+
+z_stream client2server;
+z_stream server2client;
 
 //Calls close and prints error message on failure:
 void callClose(int fd)
@@ -56,95 +57,8 @@ void callClose(int fd)
     }
 }
 
-//Used to redirect input and output:
-void redirectFD(int old_fd, int new_fd)
-{
-    callClose(old_fd);
-    if(dup2(new_fd, old_fd) < 0)
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
-}
-
-//Sets up the shell and pipes for communication with the shell:
-void setupShell()
-{
-    if(signal(SIGPIPE, handleSignal) == SIG_ERR)
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
-    
-    pipe(shell_in);
-    pipe(shell_out);
-    shell_pid = fork();
-
-    if (shell_pid == -1)
-    {
-        fprintf(stderr, "Error: %s", strerror(errno));
-        exit(1);
-    }
-
-    if(shell_pid == 0)
-    {
-
-        callClose(shell_in[1]);
-        callClose(shell_out[0]);
-        redirectFD(STDIN_FILENO, shell_in[0]);
-        redirectFD(STDOUT_FILENO, shell_out[1]);
-        redirectFD(STDERR_FILENO, shell_out[1]);
-
-        char* shell_path = "/bin/bash";
-        char* args[2] = { shell_path, NULL };
-
-        if(execvp(shell_path, args) == -1)
-        {
-            fprintf(stderr, "Error: %s", strerror(errno));
-            exit(1);
-        }
-    }
-
-    if(shell_pid > 0)
-    {
-        callClose(shell_in[0]);
-        callClose(shell_out[1]);
-    }
-}
-
-//Set terminal to character-at-a-time, no-echo mode:
-void setupTerminal()
-{
-    tcgetattr(0, &default_mode); //Regular mode stored in default_mode.
-    project_mode = default_mode; 
-    project_mode.c_cflag = ISTRIP;
-    project_mode.c_oflag = 0;
-    project_mode.c_lflag = 0;
-    tcsetattr(0, TCSANOW, &project_mode); //New modified mode is made active.
-}
-
-//Function called upon exit, sets terminal back to its default mode:
-void restoreTerminal()
-{
-    free(buf);
-    tcsetattr(0, TCSANOW, &default_mode);
-
-    //prints shell exit status:
-    if(shell_flag == 1)
-    {
-        int exit_status;
-        if(waitpid(shell_pid, &exit_status, 0) < 0)
-        {
-            fprintf(stderr, "Error: %s", strerror(errno));
-            exit(1);
-        }
-        if(WIFEXITED(exit_status))
-            fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
-    }
-}
-
 //Calls read and prints error message on failure:
-void callRead(int fd, char* buf, size_t num_bytes)
+void callRead(int fd, char *buf, size_t num_bytes)
 {
     buf_len = read(fd, buf, num_bytes);
     if (buf_len == -1)
@@ -155,7 +69,7 @@ void callRead(int fd, char* buf, size_t num_bytes)
 }
 
 //Calls write and prints error message on failure:
-void callWrite(int fd, char* buf, size_t num_bytes)
+void callWrite(int fd, char *buf, size_t num_bytes)
 {
     if (write(fd, buf, num_bytes) == -1)
     {
@@ -164,74 +78,170 @@ void callWrite(int fd, char* buf, size_t num_bytes)
     }
 }
 
-//Processes characters read from keyboard and shell and prints them:
-void processedWrite(int source) 
+void setupTerminal()
 {
-    for(int i = 0; i < buf_len; i++)
+    tcgetattr(0, &default_mode); //Regular mode stored in default_mode.
+    project_mode = default_mode;
+    project_mode.c_cflag = ISTRIP;
+    project_mode.c_oflag = 0;
+    project_mode.c_lflag = 0;
+    tcsetattr(0, TCSANOW, &project_mode); //New modified mode is made active.
+}
+
+void restoreTerminal()
+{
+    free(buf);
+    tcsetattr(0, TCSANOW, &default_mode);
+}
+
+void setupCompression()
+{
+    client2server.zalloc = Z_NULL;
+    client2server.zfree = Z_NULL;
+    client2server.opaque = Z_NULL;
+
+    if (deflateInit(&client2server, Z_DEFAULT_COMPRESSION) != Z_OK)
     {
-        callWrite(STDOUT_FILENO, buf + i, 1);
-        if (source == KEYBOARD)
-            callWrite(socket_fd, buf + i, 1);
+        fprintf(stderr, "Error: could not initialize compression\n");
+        exit(1);
     }
 
-    if(log_name != NULL)
+    server2client.zalloc = Z_NULL;
+    server2client.zfree = Z_NULL;
+    server2client.opaque = Z_NULL;
+
+    if (inflateInit(&server2client) != Z_OK)
     {
-        if(source == KEYBOARD)
-            fprintf(log_file, "SENT %d bytes: %s\n", buf_len, buf);
-        else
-            fprintf(log_file, "RECIEVED %d bytes: %s\n", buf_len, buf);
+        fprintf(stderr, "Error: could not initialize decompression\n");
+        exit(1);
     }
 }
 
-//Infinite loop for echo and shell mode:
+void compressOutput(char* compress_buf, int* compress_bytes)
+{
+    client2server.avail_in = buf_len;
+    client2server.next_in = (unsigned char *)buf;
+    client2server.avail_out = 256;
+    client2server.next_out = (unsigned char *)compress_buf;
+
+    do
+    {
+        deflate(&client2server, Z_SYNC_FLUSH);
+    } while (client2server.avail_in > 0);
+
+    *compress_bytes = (256 - client2server.avail_in);
+}
+
+void decompressInput(char *decompress_buf, int *decompress_bytes)
+{
+    server2client.avail_in = buf_len;
+    server2client.next_in = (unsigned char *)buf;
+    server2client.avail_out = 1024;
+    server2client.next_out = (unsigned char *)decompress_buf;
+    do
+    {
+        inflate(&server2client, Z_SYNC_FLUSH);
+    } while (server2client.avail_in > 0);
+
+    *decompress_bytes = (1024 - client2server.avail_in);
+}
+
+void processInput(int source, char* buffer, int num_bytes, int log_bytes)
+{
+        for(int i = 0; i < num_bytes; i++)
+        {
+            switch(buffer[i])
+            {
+                case '\r':
+                case '\n':
+                    callWrite(STDOUT_FILENO,"\r\n", 2);
+                    if ((source == KEYBOARD) && (compress_flag == 0))
+                        callWrite(sockfd, buffer + i, 1);
+                    break;
+                default:
+                    callWrite(STDOUT_FILENO, buffer + i, 1);
+                    if((source == KEYBOARD) && (compress_flag == 0))
+                        callWrite(sockfd, buffer + i, 1);
+                    break;
+            }
+        }
+
+    if (log_name != NULL)
+    {
+        if (source == KEYBOARD)
+            dprintf(log_fd, "SENT %d bytes: ", log_bytes);
+        else
+            dprintf(log_fd, "RECEIVED %d bytes: ", log_bytes);
+        callWrite(log_fd, buffer, num_bytes);
+        callWrite(log_fd, "\n", 1);
+    }
+}
+
 void runClient()
 {
     readPoll[0].fd = STDIN_FILENO;
-    readPoll[1].fd = socket_fd;
+    readPoll[1].fd = sockfd;
     readPoll[0].events = readPoll[1].events = poll_events;
 
-    while(1)
+    while (1)
     {
         int poll_return = poll(readPoll, 2, 0);
 
-        if(poll_return < 0)
+        if (poll_return < 0)
         {
             fprintf(stderr, "Error: %s", strerror(errno));
             exit(1);
         }
 
-        if(poll_return == 0)
+        if (poll_return == 0)
             continue;
-        
+
         if(readPoll[0].revents & POLLIN)
         {
             callRead(STDIN_FILENO, buf, BUF_SIZE);
-            processedWrite(KEYBOARD);
+
+            if(compress_flag == 1)
+            {
+                char compress_buf[BUF_SIZE];
+                int compress_bytes;
+                compressOutput(compress_buf, &compress_bytes);
+                processInput(KEYBOARD, buf, buf_len, compress_bytes);
+                callWrite(sockfd, compress_buf, compress_bytes);
+            }
+            else
+                processInput(KEYBOARD, buf, buf_len, buf_len);
         }
 
         if(readPoll[1].revents & POLLIN)
         {
-            callRead(socket_fd, buf, BUF_SIZE);
-            processedWrite(SERVER);
-        }
-        
-        if(readPoll[1].revents & POLLERR)
-        {
-            fprintf(stdout, "ERR\n");
-            exit(0);
+            callRead(sockfd, buf, BUF_SIZE);
+            if (buf_len == 0)
+            {
+                callClose(sockfd);
+                exit(0);
+            }
+
+            if(compress_flag == 1)
+            {
+                char decompress_buf[BUF_SIZE*4];
+                int decompress_bytes;
+                compressOutput(decompress_buf, &decompress_bytes);
+                processInput(SOCKET, decompress_buf, decompress_bytes, buf_len);
+            }
+            else
+                processInput(SOCKET, buf, buf_len, buf_len);
+
         }
 
-        if (readPoll[1].revents & POLLHUP)
+        if (readPoll[1].revents & (POLLHUP | POLLERR))
         {
-            fprintf(stdout, "HUP\n");
             exit(0);
         }
     }
 }
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
-
     //variable used to store getopt_long return values
     int c;
     // struct used to identify --shell option and report incorrect options
@@ -239,11 +249,9 @@ int main(int argc, char ** argv)
         {"port", required_argument, NULL, PORT},
         {"log", required_argument, NULL, LOG},
         {"compress", no_argument, NULL, COMPRESS},
-        {"host", required_argument, NULL, HOST},
         {0, 0, 0, 0}
     };
 
-    // loop that parses each option provided:
     int option_index = 0;
     while (1)
     {
@@ -262,18 +270,17 @@ int main(int argc, char ** argv)
             
             case LOG:
                 log_name = optarg;
-                log_file = fopen(log_name, "w+");
-                if (log_file == NULL)
+                log_fd = creat(log_name, 0666);
+                if (log_fd < 0)
                 {
                     fprintf(stderr, "Error: %s\n", strerror(errno));
+                    exit(1);
                 }
                 break;
             
             case COMPRESS:
-                break;
-
-            case HOST:
-                hostname = optarg;
+                compress_flag = 1;
+                setupCompression();
                 break;
 
             default:
@@ -283,47 +290,41 @@ int main(int argc, char ** argv)
     }
 
     //checks for mandatory port option:
-    if(port_flag == 0)
+    if (port_flag == 0)
     {
         fprintf(stderr, "Error: mandatory option --port=port# not provided\n");
         exit(1);
     }
-    
+
     //initialize buffer for reads and writes:
-    buf = (char*) malloc(BUF_SIZE);
+    buf = (char *)malloc(BUF_SIZE);
 
-    //create socket:
-    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(socket_fd < 0)
+    //setting up socket for connection to server:
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
     {
-        fprintf(stderr, "Error: %s", strerror(errno));
+        fprintf(stderr, "Error: %s\n", strerror(errno));
+        exit(1);
+    }
+    server = gethostbyname("localhost");
+    if (server == NULL)
+    {
+        fprintf(stderr, "ERROR, no such host\n");
+        exit(1);
+    }
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr,
+            (char *)&serv_addr.sin_addr.s_addr,
+            server->h_length);
+    serv_addr.sin_port = htons(port_num);
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        fprintf(stderr, "Error: %s\n", strerror(errno));
         exit(1);
     }
 
-    //processing host provided or localhost (default):
-    host = gethostbyname(hostname);
-    if (host == NULL)
-    {
-        fprintf(stderr, "Error: could not find host with name: %s\n", hostname);
-        exit(1);
-    }
-
-    //connect client socket:
-    bzero((char *)&server, sizeof(server));
-    server.sin_family = AF_INET;
-    bcopy((char *)host->h_addr,
-          (char *)&server.sin_addr.s_addr,
-          host->h_length);
-    server.sin_port = htons(port_num);
-
-    if (connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0)
-    {
-        fprintf(stderr, "Error: could not connect to remote host! hostname:%s, port:%d\n", hostname, port_num);
-        exit(1);
-    }
-
-    setupTerminal();         //sets up new terminal mode.
-    atexit(restoreTerminal); //sets function to be called on exit.
+    setupTerminal();
+    atexit(restoreTerminal);
     runClient();
 }
-

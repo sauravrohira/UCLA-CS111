@@ -153,54 +153,55 @@ void setupShell()
 
 void setupCompression()
 {
-    client2server.zalloc = Z_NULL;
-    client2server.zfree = Z_NULL;
-    client2server.opaque = Z_NULL;
+    server2client.zalloc = Z_NULL;
+    server2client.zfree = Z_NULL;
+    server2client.opaque = Z_NULL;
 
-    if (deflateInit(&client2server, Z_DEFAULT_COMPRESSION) != Z_OK)
+    if (deflateInit(&server2client, Z_DEFAULT_COMPRESSION) != Z_OK)
     {
         fprintf(stderr, "Error: could not initialize compression\n");
         exit(1);
     }
 
-    server2client.zalloc = Z_NULL;
-    server2client.zfree = Z_NULL;
-    server2client.opaque = Z_NULL;
+    client2server.zalloc = Z_NULL;
+    client2server.zfree = Z_NULL;
+    client2server.opaque = Z_NULL;
 
-    if (inflateInit(&server2client) != Z_OK)
+    if (inflateInit(&client2server) != Z_OK)
     {
         fprintf(stderr, "Error: could not initialize decompression\n");
         exit(1);
     }
 }
 
-void decompressInput(char *decompress_buf, int *decompress_bytes)
-{
-    client2server.avail_in = buf_len;
-    client2server.next_in = (unsigned char *)buf;
-    client2server.avail_out = 256;
-    client2server.next_out = (unsigned char *)decompress_buf;
-
-    do
-    {
-        deflate(&client2server, Z_SYNC_FLUSH);
-    } while (client2server.avail_in > 0);
-
-    *decompress_bytes = (1024 - client2server.avail_in);
-}
-
 void compressOutput(char *compress_buf, int *compress_bytes)
 {
     server2client.avail_in = buf_len;
     server2client.next_in = (unsigned char *)buf;
-    server2client.avail_out = 1024;
+    server2client.avail_out = 256;
     server2client.next_out = (unsigned char *)compress_buf;
+
     do
     {
-        inflate(&server2client, Z_SYNC_FLUSH);
+        deflate(&server2client, Z_SYNC_FLUSH);
     } while (server2client.avail_in > 0);
 
-    *compress_bytes = (256 - client2server.avail_in);
+    *compress_bytes = (256 - server2client.avail_out);
+}
+
+void decompressInput(char *decompress_buf, int *decompress_bytes)
+{
+    client2server.avail_in = buf_len;
+    client2server.next_in = (unsigned char *)buf;
+    client2server.avail_out = 1024;
+    client2server.next_out = (unsigned char *)decompress_buf;
+
+    do
+    {
+        inflate(&client2server, Z_SYNC_FLUSH);
+    } while (client2server.avail_in > 0);
+
+    *decompress_bytes = (1024 - client2server.avail_out);
 }
 
 void processInput(int source, char* buffer, int num_bytes)
@@ -259,29 +260,42 @@ void runServer()
         if (readPoll[0].revents & POLLIN)
         {
             callRead(newsockfd, buf, BUF_SIZE);
-            if(compress_flag == 1)
-            {
-                char decompress_buf[BUF_SIZE*4];
-                int decompress_bytes;
-                decompressInput(decompress_buf, &decompress_bytes);
-                processInput(SOCKET, decompress_buf, decompress_bytes);
-            }
-            else
+            if(compress_flag == 0)
                 processInput(SOCKET, buf, buf_len);
+            else
+            {
+                char compression_buf[1024];
+                client2server.avail_in = buf_len;
+                client2server.next_in = (unsigned char *)buf;
+                client2server.avail_out = 1024;
+                client2server.next_out = (unsigned char *)compression_buf;
+                do
+                {
+                    inflate(&client2server, Z_SYNC_FLUSH);
+                } while (client2server.avail_in > 0);
+                processInput(SOCKET, compression_buf, 1024 - client2server.avail_out);
+            }
         }
 
         if (readPoll[1].revents & POLLIN)
         {
             callRead(shell_out[0], buf, BUF_SIZE);
-            if(compress_flag == 1)
-            {
-                char compress_buf[BUF_SIZE];
-                int compress_bytes;
-                compressOutput(compress_buf, &compress_bytes);
-                callWrite(newsockfd, compress_buf, compress_bytes);
-            }
-            else
+            if(compress_flag == 0)
                 processInput(SHELL, buf, buf_len);
+            else
+            {
+                char compression_buf[256];
+                server2client.avail_in = buf_len;
+                server2client.next_in = (unsigned char *)buf;
+                server2client.avail_out = 256;
+                server2client.next_out = (unsigned char *)compression_buf;
+                do
+                {
+                    deflate(&server2client, Z_SYNC_FLUSH);
+                } while (server2client.avail_in > 0);
+
+                callWrite(newsockfd, compression_buf, 256 - server2client.avail_out);
+            }
         }
 
         if (readPoll[1].revents & (POLLHUP | POLLERR))
@@ -321,7 +335,7 @@ int main(int argc, char** argv)
                 compress_flag = 1;
                 setupCompression();
                 break;
-                
+
             default:
                 exit(1);
                 break;

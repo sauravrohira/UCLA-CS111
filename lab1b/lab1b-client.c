@@ -129,7 +129,7 @@ void compressOutput(char* compress_buf, int* compress_bytes)
         deflate(&client2server, Z_SYNC_FLUSH);
     } while (client2server.avail_in > 0);
 
-    *compress_bytes = (256 - client2server.avail_in);
+    *compress_bytes = (256 - client2server.avail_out);
 }
 
 void decompressInput(char *decompress_buf, int *decompress_bytes)
@@ -143,7 +143,7 @@ void decompressInput(char *decompress_buf, int *decompress_bytes)
         inflate(&server2client, Z_SYNC_FLUSH);
     } while (server2client.avail_in > 0);
 
-    *decompress_bytes = (1024 - client2server.avail_in);
+    *decompress_bytes = (1024 - client2server.avail_out);
 }
 
 void processInput(int source, char* buffer, int num_bytes, int log_bytes)
@@ -199,16 +199,22 @@ void runClient()
         if(readPoll[0].revents & POLLIN)
         {
             callRead(STDIN_FILENO, buf, BUF_SIZE);
-            if(compress_flag == 1)
-            {
-                char compress_buf[BUF_SIZE];
-                int compress_bytes;
-                compressOutput(compress_buf, &compress_bytes);
-                processInput(KEYBOARD, buf, buf_len, compress_bytes);
-                callWrite(sockfd, compress_buf, compress_bytes);
-            }
-            else
+            if(compress_flag == 0)
                 processInput(KEYBOARD, buf, buf_len, buf_len);
+            else
+            {
+                char compression_buf[256];
+                client2server.avail_in = buf_len;
+                client2server.next_in = (unsigned char *)buf;
+                client2server.avail_out = 256;
+                client2server.next_out = (unsigned char *)compression_buf;
+                do
+                {
+                    deflate(&client2server, Z_SYNC_FLUSH);
+                } while (client2server.avail_in > 0);
+                callWrite(sockfd, compression_buf, 256 - client2server.avail_out);
+                processInput(KEYBOARD, buf, buf_len, 256 - client2server.avail_out);
+            }  
         }
 
         if(readPoll[1].revents & POLLIN)
@@ -220,16 +226,21 @@ void runClient()
                 exit(0);
             }
 
-            if(compress_flag == 1)
-            {
-                char decompress_buf[BUF_SIZE*4];
-                int decompress_bytes;
-                compressOutput(decompress_buf, &decompress_bytes);
-                processInput(SOCKET, decompress_buf, decompress_bytes, buf_len);
-            }
-            else
+            if(compress_flag == 0)
                 processInput(SOCKET, buf, buf_len, buf_len);
-
+            else
+            {
+                char compression_buf[1024];
+                server2client.avail_in = buf_len;
+                server2client.next_in = (unsigned char *)buf;
+                server2client.avail_out = 1024;
+                server2client.next_out = (unsigned char *)compression_buf;
+                do
+                {
+                    inflate(&server2client, Z_SYNC_FLUSH);
+                } while (server2client.avail_in > 0);
+                processInput(SOCKET, compression_buf, 1024 - server2client.avail_out, buf_len);
+            }
         }
 
         if (readPoll[1].revents & (POLLHUP | POLLERR))

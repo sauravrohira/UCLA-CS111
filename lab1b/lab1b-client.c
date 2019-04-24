@@ -203,17 +203,11 @@ void runClient()
                 processInput(KEYBOARD, buf, buf_len, buf_len);
             else
             {
+                int compress_bytes;
                 char compression_buf[256];
-                client2server.avail_in = buf_len;
-                client2server.next_in = (unsigned char *)buf;
-                client2server.avail_out = 256;
-                client2server.next_out = (unsigned char *)compression_buf;
-                do
-                {
-                    deflate(&client2server, Z_SYNC_FLUSH);
-                } while (client2server.avail_in > 0);
-                callWrite(sockfd, compression_buf, 256 - client2server.avail_out);
-                processInput(KEYBOARD, buf, buf_len, 256 - client2server.avail_out);
+                compressOutput(compression_buf, &compress_bytes);
+                callWrite(sockfd, compression_buf, compress_bytes);
+                processInput(KEYBOARD, buf, buf_len, compress_bytes);
             }  
         }
 
@@ -230,16 +224,10 @@ void runClient()
                 processInput(SOCKET, buf, buf_len, buf_len);
             else
             {
+                int compress_bytes;
                 char compression_buf[1024];
-                server2client.avail_in = buf_len;
-                server2client.next_in = (unsigned char *)buf;
-                server2client.avail_out = 1024;
-                server2client.next_out = (unsigned char *)compression_buf;
-                do
-                {
-                    inflate(&server2client, Z_SYNC_FLUSH);
-                } while (server2client.avail_in > 0);
-                processInput(SOCKET, compression_buf, 1024 - server2client.avail_out, buf_len);
+                decompressInput(compression_buf, compress_bytes);
+                processInput(SOCKET, compression_buf, compress_bytes);
             }
         }
 

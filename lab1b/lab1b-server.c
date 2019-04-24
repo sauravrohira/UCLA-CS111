@@ -264,16 +264,10 @@ void runServer()
                 processInput(SOCKET, buf, buf_len);
             else
             {
+                int compress_bytes;
                 char compression_buf[1024];
-                client2server.avail_in = buf_len;
-                client2server.next_in = (unsigned char *)buf;
-                client2server.avail_out = 1024;
-                client2server.next_out = (unsigned char *)compression_buf;
-                do
-                {
-                    inflate(&client2server, Z_SYNC_FLUSH);
-                } while (client2server.avail_in > 0);
-                processInput(SOCKET, compression_buf, 1024 - client2server.avail_out);
+                decompressInput(compression_buf, compress_bytes);
+                processInput(SOCKET, compression_buf, compress_bytes);
             }
         }
 
@@ -284,17 +278,10 @@ void runServer()
                 processInput(SHELL, buf, buf_len);
             else
             {
+                int compress_bytes;
                 char compression_buf[256];
-                server2client.avail_in = buf_len;
-                server2client.next_in = (unsigned char *)buf;
-                server2client.avail_out = 256;
-                server2client.next_out = (unsigned char *)compression_buf;
-                do
-                {
-                    deflate(&server2client, Z_SYNC_FLUSH);
-                } while (server2client.avail_in > 0);
-
-                callWrite(newsockfd, compression_buf, 256 - server2client.avail_out);
+                compressInput(compression_buf, compress_bytes);
+                callWrite(newsockfd, compression_buf, compress_bytes);
             }
         }
 

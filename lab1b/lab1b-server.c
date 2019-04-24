@@ -104,7 +104,7 @@ void restore()
     if (WIFEXITED(exit_status))
         fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\n", WTERMSIG(exit_status), WEXITSTATUS(exit_status));
     callClose(newsockfd);
-    
+
     deflateEnd(&client2server);
     inflateEnd(&server2client);
 }

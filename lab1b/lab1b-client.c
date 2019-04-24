@@ -148,7 +148,7 @@ void decompressInput(char *decompress_buf, int *decompress_bytes)
     *decompress_bytes = (1024 - server2client.avail_out);
 }
 
-void processInput(int source, char* buffer, int num_bytes, int log_bytes)
+void processInput(int source, char* buffer, int num_bytes)
 {
         for(int i = 0; i < num_bytes; i++)
         {
@@ -167,16 +167,16 @@ void processInput(int source, char* buffer, int num_bytes, int log_bytes)
                     break;
             }
         }
+}
 
-    if (log_name != NULL)
-    {
-        if (source == KEYBOARD)
-            dprintf(log_fd, "SENT %d bytes: ", log_bytes);
-        else
-            dprintf(log_fd, "RECEIVED %d bytes: ", log_bytes);
-        callWrite(log_fd, buffer, num_bytes);
-        callWrite(log_fd, "\n", 1);
-    }
+void writeLog(int source, char* buffer, int buffer_size)
+{
+    if (source == KEYBOARD)
+        dprintf(log_fd, "SENT %d bytes: ", buffer_size);
+    else
+        dprintf(log_fd, "RECEIVED %d bytes: ", buffer_size);
+    callWrite(log_fd, buffer, buffer_size);
+    callWrite(log_fd, "\n", 1);
 }
 
 void runClient()
@@ -202,14 +202,20 @@ void runClient()
         {
             callRead(STDIN_FILENO, buf, BUF_SIZE);
             if(compress_flag == 0)
-                processInput(KEYBOARD, buf, buf_len, buf_len);
+            {
+                processInput(KEYBOARD, buf, buf_len);
+                if(log_name != NULL)
+                    writeLog(KEYBOARD, buf, buf_len);
+            }
             else
             {
                 int compress_bytes;
                 char compression_buf[256];
                 compressOutput(compression_buf, &compress_bytes);
                 callWrite(sockfd, compression_buf, compress_bytes);
-                processInput(KEYBOARD, buf, buf_len, compress_bytes);
+                processInput(KEYBOARD, buf, buf_len);
+                if (log_name != NULL)
+                    writeLog(KEYBOARD, compression_buf, compress_bytes);
             }  
         }
 
@@ -222,14 +228,17 @@ void runClient()
                 exit(0);
             }
 
+            if (log_name != NULL)
+                writeLog(SOCKET, buf, buf_len);
+
             if(compress_flag == 0)
-                processInput(SOCKET, buf, buf_len, buf_len);
+                processInput(SOCKET, buf, buf_len);
             else
             {
                 int compress_bytes;
                 char compression_buf[1024];
                 decompressInput(compression_buf, &compress_bytes);
-                processInput(SOCKET, compression_buf, compress_bytes, buf_len);
+                processInput(SOCKET, compression_buf, compress_bytes);
             }
         }
 

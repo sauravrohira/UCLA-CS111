@@ -92,6 +92,8 @@ void restoreTerminal()
 {
     free(buf);
     tcsetattr(0, TCSANOW, &default_mode);
+    deflateEnd(&client2server);
+    inflateEnd(&server2client);
 }
 
 void setupCompression()

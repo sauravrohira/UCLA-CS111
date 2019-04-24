@@ -143,7 +143,7 @@ void decompressInput(char *decompress_buf, int *decompress_bytes)
         inflate(&server2client, Z_SYNC_FLUSH);
     } while (server2client.avail_in > 0);
 
-    *decompress_bytes = (1024 - client2server.avail_out);
+    *decompress_bytes = (1024 - server2client.avail_out);
 }
 
 void processInput(int source, char* buffer, int num_bytes, int log_bytes)

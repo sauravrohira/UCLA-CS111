@@ -226,8 +226,8 @@ void runClient()
             {
                 int compress_bytes;
                 char compression_buf[1024];
-                decompressInput(compression_buf, compress_bytes);
-                processInput(SOCKET, compression_buf, compress_bytes);
+                decompressInput(compression_buf, &compress_bytes);
+                processInput(SOCKET, compression_buf, compress_bytes, buf_len);
             }
         }
 

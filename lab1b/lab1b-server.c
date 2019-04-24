@@ -266,7 +266,7 @@ void runServer()
             {
                 int compress_bytes;
                 char compression_buf[1024];
-                decompressInput(compression_buf, compress_bytes);
+                decompressInput(compression_buf, &compress_bytes);
                 processInput(SOCKET, compression_buf, compress_bytes);
             }
         }
@@ -280,7 +280,7 @@ void runServer()
             {
                 int compress_bytes;
                 char compression_buf[256];
-                compressInput(compression_buf, compress_bytes);
+                compressOutput(compression_buf, &compress_bytes);
                 callWrite(newsockfd, compression_buf, compress_bytes);
             }
         }

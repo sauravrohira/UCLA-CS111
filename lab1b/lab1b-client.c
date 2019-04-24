@@ -209,7 +209,7 @@ void runClient()
                 char compression_buf[256];
                 compressOutput(compression_buf, &compress_bytes);
                 callWrite(sockfd, compression_buf, compress_bytes);
-                processInput(KEYBOARD, buf, buf_len, buf_len);
+                processInput(KEYBOARD, buf, buf_len, compress_bytes);
             }  
         }
 

@@ -19,7 +19,7 @@ profile: default
 graphs: tests
 	gnuplot lab2b_list.gp
 
-dist: graphs
+dist: graphs profile
 	tar -cvzf lab2b-505000422.tar.gz lab2_list.c Makefile README SortedList.c SortedList.h *.png *.csv *.gp tests.sh profile.out
 
 clean:

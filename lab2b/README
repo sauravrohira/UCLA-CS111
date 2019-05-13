@@ -1,18 +1,18 @@
-NAME:Saurav Rohira,Raghav Dhall
-EMAIL:saurav.rohira1999@gmail.com,raghavdhall@gmail.com
-ID:505000422,304932794
+NAME:Saurav Rohira
+EMAIL:saurav.rohira1999@gmail.com
+ID:505000422
 
 2.3.1
 
-For the 1 and 2 thread list tests, in the basic case, most time is probably spent doing list operations (inserts, deletes, lookups, length) because there is very little to no time spent on waiting for locks, as there is not much contention for the lock with such few threads.
+For the 1 and 2 thread list tests, in the basic case, most cycles are probably spent performing list operations (inserts, deletes, lookups, length). These are the most expensive because there is very little to no time spent on waiting for locks, as there is not much contention for the lock with such few threads.
 
-For the high-thread spin-lock cases, most of the time is probably spent "spinning" while threads loop while waiting to acquire the lock.
+For the high-thread spin-lock cases, most CPU cycles are spent "spinning," i.e. with threads stalled by a loop as they wait to acquire the lock.
 
-For the high-thread mutex cases, majority of CPU time is also probably spent on list operations as threads are simply put to sleep while waiting to acquire the lock. (however this wait time does contribute slightly, causing it to still take more time than just for list operations)
+For the high-thread mutex cases, CPU cycles probably spent on list operations once again as threads are simply put to sleep while waiting to acquire the lock. (however this wait time does contribute slightly, causing it to still take spend more cpu cycles than just for list operations)
 
 2.3.2
 
-For a large number of threads, most CPU time is spent spinning while waiting to accquire the thread. Therefore, the lines of code consuming most of the CPU time are the implementation of this lock, i.e line 73 of my lab2_list.c file:
+For a large number of threads, most CPU cycles are consumed when spinning while waiting to acquire the thread. Therefore, the lines of code consuming most of the CPU time are the implementation of this lock, i.e line 73 of my lab2_list.c file:
 
 while(__sync_lock_test_and_set(spin_locks + list_index, 1));
 
@@ -22,13 +22,14 @@ This operation becomes particularly expensive with large numbers of threads beca
 
 2.3.3
 
-Average lock-wait time rises very dramatically with the increasing number of threads because what causes threads to wait is the fact that multiple threads are competing to modify the same shared resourse. With more threads, there will be far greater contention for these resources and therefore greater contention for the locks. As competition increases, so does the time spent by threads waiting for their turn to modify shared resources.
+Average lock-wait time rises very dramatically with the increasing number of threads because what causes threads to wait is the fact that multiple threads are competing to modify the same shared resource. With more threads, there will be far greater contention for these resources and therefore greater contention for the locks. As competition increases, so does the time spent by threads waiting for their turn to modify shared resources.
 
-Completetion time per operation rises far less dramatically as the amount of time an operation takes to complete, is not affected by the number of threads running at that time. Therefore wait time is what is mostly contributing to the increased time to completion, and the time to completion per operation rises far less dramitically. As number of threads increases, overrall time to completion increases as there are more operations, but since the time taken per operation (without wait) is approximately unaffected, this causes wait time to increase even greater than real average time per operation.
+Completion time per operation rises far less dramatically as the amount of time an operation takes to complete, is not affected by the number of threads running at that time. Therefore wait time is what is mostly contributing to the increased time to completion, and the time to completion per operation rises far less dramatically. As number of threads increases, overall time to completion increases as there are more operations, but since the time taken per operation (without wait) is approximately unaffected, this causes wait time to increase even greater than real average time per operation.
+
 
 2.3.4
 
-As number of lists increases, so does the performance (as measured by aggregate throughput) of the synchronised methods.
+As number of lists increases, so does the performance (as measured by aggregate throughput) of the synchronized methods.
 
 However, this function would probably trend somewhat logarithmically, as after a point adding lists would no longer improve the throughput. This limit would be reached at N-sublists, where N = number of elements. In fact, after this throughput could even increase, as while the elements are in less contention, the overhead of creating more sublists might reduce performance.
 

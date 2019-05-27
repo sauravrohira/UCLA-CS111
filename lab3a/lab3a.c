@@ -183,11 +183,11 @@ void group_summary()
         groups[i].bg_free_inodes_count,
         groups[i].bg_block_bitmap,
         groups[i].bg_inode_bitmap,
-        groups[i].bg_inode_bitmap + 1
+        groups[i].bg_inode_table
         );
         free_block_entries_summary(offset, (groups[i].bg_block_bitmap - 2), num_blocks);
         free_inode_entries_summary(offset, (groups[i].bg_inode_bitmap - 2), num_inodes);
-        inode_summary(offset, (groups[i].bg_inode_bitmap - 1), num_inodes);
+        inode_summary(offset, (groups[i].bg_inode_table - 2), num_inodes);
         offset += num_blocks*block_size;
     }    
 }

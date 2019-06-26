@@ -1,4 +1,4 @@
-# UCLA CS111 (Operating Systems) Spring 2019
+# UCLA CS111 (Operating Systems) – Spring 2019
 
 This repository contains the solutions to all the projects I worked on for CS111: Operating Systems taken with Professor Harry Xu.
 

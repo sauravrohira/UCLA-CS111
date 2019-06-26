@@ -1,6 +1,6 @@
 # UCLA CS111 (Operating Systems) Spring 2019
 
-Taken with Professor Harry Xu. 
+This repository contains the solutions to all the projects I worked on for CS111: Operating Systems taken with Professor Harry Xu.
 
 | Project Name                    | Solution   | Score   |
 | ------------------------------- | ---------- | ------- |
@@ -14,5 +14,3 @@ Taken with Professor Harry Xu.
 | P4A: Embedded System Bringup    | [Solution] | 100/100 |
 | P4B: Sensors and Communication  | [Solution] |  89/100 |
 | P4C - IOT Secure Communication  | [Solution] |  99/100 |
-
-

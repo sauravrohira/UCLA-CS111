@@ -13,4 +13,4 @@ This repository contains the solutions to all the projects I worked on for CS111
 | P3B: File System Analysis       | [Solution](https://github.com/sauravrohira/cs111-spring19/tree/master/lab3b) | 100/100 |
 | P4A: Embedded System Bringup    | [Solution](https://github.com/sauravrohira/cs111-spring19/tree/master/lab4a) | 100/100 |
 | P4B: Sensors and Communication  | [Solution](https://github.com/sauravrohira/cs111-spring19/tree/master/lab4b) |  89/100 |
-| P4C - IOT Secure Communication  | [Solution](https://github.com/sauravrohira/cs111-spring19/tree/master/lab4c) |  99/100 |
+| P4C: IOT Secure Communication  | [Solution](https://github.com/sauravrohira/cs111-spring19/tree/master/lab4c) |  99/100 |

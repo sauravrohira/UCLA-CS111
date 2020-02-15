@@ -1,9 +1,0 @@
-NAME: Saurav Rohira
-EMAIL: saurav.rohira1999@gmail.com
-ID: 505000422
-
-This project consists of the files:
-README: this file which lists personal details, project contents.
-lab1a.c: the C source module used to build the executable
-Makefile: this builds the program, the tarball and contains the clean target
-
